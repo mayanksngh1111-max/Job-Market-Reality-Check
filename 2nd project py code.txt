@@ -1,0 +1,63 @@
+import pandas as pd
+import numpy as np
+import re
+df=pd.read_csv('C:/Users/Mayank/OneDrive/Desktop/project/data analysis/2nd/DataAnalyst.csv/DataAnalyst.csv')
+print(df.head())
+print(df.info())
+print(df.describe(include='all'))
+# 1. Basic cleaning
+df.drop_duplicates(inplace=True)
+df.dropna(subset=['Job Description'], inplace=True)
+df.columns = [c.strip().lower().replace(' ', '_') for c in df.columns]
+df.rename(columns={'index': 'job_id'}, inplace=True)
+
+# 2. Clean salary field (often messy text like "$65K-$85K (Glassdoor est.)")
+def clean_salary(s):
+    if pd.isna(s): return None
+    nums = re.findall(r'\d+', str(s))
+    nums = [int(n) for n in nums]
+    return sum(nums)/len(nums)*1000 if nums else None
+
+df['avg_salary'] = df['salary_estimate'].apply(clean_salary)
+
+df['avg_revenue'] = df['revenue'].apply(clean_salary)
+
+# 3. Clean location (split city/state)
+df[['city', 'state']] = df['location'].str.split(',', expand=True, n=1)
+skills_list = [
+    'python', 'sql', 'excel', 'power bi', 'tableau', 'r', 'sas',
+    'spark', 'hadoop', 'aws', 'azure', 'gcp', 'looker', 'dax',
+    'machine learning', 'statistics', 'a/b testing', 'google analytics',
+    'snowflake', 'etl', 'airflow', 'javascript', 'vba'
+]
+
+def extract_skills(description):
+    desc = str(description).lower()
+    found = [skill for skill in skills_list if skill in desc]
+    return found
+
+df['extracted_skills'] = df['job_description'].apply(extract_skills)
+
+# Explode into one row per skill per job (for easy counting/joining later)
+skills_exploded = df[['job_id', 'city', 'state', 'avg_salary']].join(df['extracted_skills'].explode()).rename(columns={'extracted_skills': 'skill'})
+
+
+
+# Step 1: Connect to PostgreSQL
+# Replace placeholders with your actual details
+from sqlalchemy import create_engine
+username = "postgres"          # default user
+password = "Mayank%402004"          # the password you set during installation
+host     = "localhost"         # if running locally
+port     = "5432"              # default PostgreSQL port
+database = "Job Market Check" # the database you created in pgAdmin
+
+engine = create_engine(f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}")
+
+# Step 2: Load DataFrame into PostgreSQL
+table_name = ("job")        # choose any table name
+df.to_sql(table_name, engine, if_exists="replace", index=False)
+
+print(f"Data successfully loaded into table '{table_name}' in database '{database}'.")
+
+df.to_csv(    r"C:\Users\Mayank\OneDrive\Desktop\project\data analysis\2nd\DataAnalyst.csv\jobs_cleaned.csv", index=False)
